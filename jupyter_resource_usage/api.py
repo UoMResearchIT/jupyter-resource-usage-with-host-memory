@@ -2,6 +2,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from inspect import isawaitable
 
+import os
 import psutil
 import zmq.asyncio
 from jupyter_client.jsonutil import date_default
@@ -46,7 +47,23 @@ class ApiHandler(APIHandler):
             except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
                 pass
 
-        available = psutil.virtual_memory().available
+        #available = psutil.virtual_memory().available
+
+        limit = float('inf')
+        for path in ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]:
+          if os.path.exists(path):
+            with open(path, "r") as f:
+              limit = f.read().strip()
+              limit = int(limit) if limit.isdigit() else float('inf')
+            continue
+        limit = min(psutil.virtual_memory().total,limit)
+        usage = 0
+        for path in ["/sys/fs/cgroup/memory.current","/sys/fs/cgroup/memory/memory.usage_in_bytes"]:
+          if os.path.exists(path):
+            with open(path, "r") as f:
+              usage = int(f.read().strip())
+            continue
+        available = min((limit-usage),psutil.virtual_memory().available)
 
         if callable(config.mem_limit):
             mem_limit = config.mem_limit(rss=rss, pss=pss)
